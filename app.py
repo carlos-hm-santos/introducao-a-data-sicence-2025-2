@@ -1,27 +1,27 @@
-
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import os # For managing file paths
+import os
 
-# --- Data Loading and Preprocessing (as in the notebook) ---
-@st.cache_data # Cache the data loading to improve performance
+# --- Data Loading and Preprocessing ---
+@st.cache_data
 def load_and_preprocess_data():
-    # Construct the full path to the CSV file
-    beer_df = pd.read_csv("./Consumo_cerveja.csv")
+    # Simulando o carregamento do CSV
+    # Em um cenário real, certifique-se que o arquivo existe no caminho abaixo
+    try:
+        beer_df = pd.read_csv("./Consumo_cerveja.csv")
+    except FileNotFoundError:
+        # Fallback para demonstração caso o arquivo não exista localmente
+        st.error("Arquivo 'Consumo_cerveja.csv' não encontrado. Verifique o caminho.")
+        return pd.DataFrame()
 
-    # Drop rows with any missing values
     beer_df = beer_df.dropna()
-
-    # Rename columns
     beer_df.columns = ['date', 'avg_temp', 'min_temp', 'max_max', 'precipitation', 'is_weekend', 'consumption']
 
-    # Convert types
-    beer_df['avg_temp'] = beer_df['avg_temp'].str.replace(',', '.').astype(float)
-    beer_df['min_temp'] = beer_df['min_temp'].str.replace(',', '.').astype(float)
-    beer_df['max_max'] = beer_df['max_max'].str.replace(',', '.').astype(float)
-    beer_df['precipitation'] = beer_df['precipitation'].str.replace(',', '.').astype(float)
+    # Conversão de tipos
+    for col in ['avg_temp', 'min_temp', 'max_max', 'precipitation']:
+        if beer_df[col].dtype == 'object':
+            beer_df[col] = beer_df[col].str.replace(',', '.').astype(float)
+    
     beer_df['is_weekend'] = beer_df['is_weekend'] > 0.5
     beer_df['date'] = pd.to_datetime(beer_df['date'])
 
@@ -29,118 +29,89 @@ def load_and_preprocess_data():
 
 beer_df = load_and_preprocess_data()
 
-# --- Streamlit App Layout ---
-st.set_page_config(layout="wide")
+if not beer_df.empty:
+    # --- Streamlit App Layout ---
+    st.set_page_config(layout="wide", page_title="Consumo de Cerveja SP")
 
-st.title("Análise do Consumo de Cerveja em São Paulo")
+    st.title("🍺 Análise do Consumo de Cerveja em São Paulo")
 
-st.markdown("""
-Esta aplicação Streamlit apresenta uma análise exploratória do consumo de cerveja em São Paulo,
-baseada nos dados de 2015.
-""")
+    st.markdown("""
+    Esta aplicação utiliza **Streamlit Charts** nativos para apresentar uma análise exploratória do consumo de cerveja em São Paulo (2015).
+    """)
 
-# Display the raw data
-st.header("Dados Brutos e Pré-processados")
-st.write("Amostra do DataFrame após carregamento e limpeza:")
-st.dataframe(beer_df.head())
+    # Display the raw data
+    st.header("Dados Processados")
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("Amostra do DataFrame")
+        st.dataframe(beer_df.head(), use_container_width=True)
 
-st.write("Informações gerais do DataFrame:")
-st.write(f"Número de linhas: {beer_df.shape[0]}")
-st.write(f"Número de colunas: {beer_df.shape[1]}")
-st.write("Tipos de dados:")
-st.dataframe(beer_df.dtypes.astype(str).reset_index().rename(columns={
-    'index': 'Coluna',
-    0: 'Tipo de Dado'
-}))
+    with col2:
+        st.subheader("Metadados")
+        st.write(f"**Linhas:** {beer_df.shape[0]}")
+        st.write(f"**Colunas:** {beer_df.shape[1]}")
+        st.dataframe(beer_df.dtypes.astype(str).reset_index().rename(columns={
+            'index': 'Coluna', 0: 'Tipo'
+        }), use_container_width=True)
 
-# --- Visualizations (reproducing some from the notebook) ---
-st.header("Visualizações Chave")
+    # --- Visualizations with Streamlit Native Charts ---
+    st.header("Visualizações Interativas")
 
-# Monthly Average Precipitation Plot
-st.subheader("Precipitação Média Mensal")
-monthly_df_precip = beer_df.copy()
-monthly_df_precip.set_index('date', inplace=True)
-monthly_avg_precip = monthly_df_precip['precipitation'].resample('ME').mean()
+    # 1. Monthly Average Precipitation Plot
+    st.subheader("Precipitação Média Mensal")
+    monthly_precip = beer_df.copy()
+    monthly_precip.set_index('date', inplace=True)
+    monthly_avg_precip = monthly_precip['precipitation'].resample('ME').mean()
+    
+    # st.bar_chart usa o índice como eixo X automaticamente
+    st.bar_chart(monthly_avg_precip, color="#0077b6")
 
-fig_precip, ax_precip = plt.subplots(figsize=(12, 6))
-ax_precip.bar([d.strftime('%b %Y') for d in monthly_avg_precip.index], monthly_avg_precip.values, color='skyblue', edgecolor='navy')
-ax_precip.set_title('Média de Precipitação Mensal', fontsize=16)
-ax_precip.set_xlabel('Mês', fontsize=12)
-ax_precip.set_ylabel('Precipitação Média (mm)', fontsize=12)
-plt.xticks(rotation=45)
-ax_precip.grid(axis='y', linestyle='--', alpha=0.7)
-plt.tight_layout()
-st.pyplot(fig_precip)
+    # 2. Consumption Distribution by Weekday (Using Vega-Lite for Boxplot)
+    st.subheader("Distribuição do Consumo por Dia da Semana")
+    weekdays_df = beer_df.copy()
+    weekdays_df['weekday'] = weekdays_df['date'].dt.day_name()
+    weekday_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
-# Consumption Distribution by Weekday Boxplot
-st.subheader("Distribuição do Consumo por Dia da Semana")
-weekdays_df = beer_df.copy()
-weekdays_df['weekday'] = beer_df['date'].dt.day_name()
-weekday_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    # Streamlit usa Vega-Lite por baixo para gráficos complexos como Boxplots
+    st.vega_lite_chart(weekdays_df, {
+        'mark': {'type': 'boxplot', 'extent': 'min-max'},
+        'encoding': {
+            'x': {'field': 'weekday', 'type': 'nominal', 'sort': weekday_order, 'title': 'Dia da Semana'},
+            'y': {'field': 'consumption', 'type': 'quantitative', 'title': 'Consumo (Litros)'},
+            'color': {'field': 'weekday', 'type': 'nominal', 'legend': None}
+        },
+        'config': {'view': {'stroke': 'transparent'}}
+    }, use_container_width=True)
 
-fig_weekday, ax_weekday = plt.subplots(figsize=(12, 6))
-sns.boxplot(x='weekday', y='consumption', data=weekdays_df, order=weekday_order, ax=ax_weekday)
-ax_weekday.set_title('Distribuição do Consumo por Dia da Semana', fontsize=15)
-ax_weekday.set_xlabel('Dia da Semana', fontsize=12)
-ax_weekday.set_ylabel('Consumo', fontsize=12)
-ax_weekday.grid(axis='y', linestyle='--', alpha=0.6)
-plt.tight_layout()
-st.pyplot(fig_weekday)
+    # 3. Monthly Consumption Comparison
+    st.subheader("Comparação do Consumo Mensal (Sazonalidade)")
+    yearly_df = beer_df.copy()
+    yearly_df['month_name'] = yearly_df['date'].dt.strftime('%b')
+    yearly_df['month_num'] = yearly_df['date'].dt.month
+    
+    # Agrupando para linha
+    seasonal_data = yearly_df.groupby(['month_num', 'month_name'])['consumption'].sum().reset_index()
+    seasonal_data = seasonal_data.set_index('month_name')['consumption']
+    
+    st.line_chart(seasonal_data, color="#ff4b4b")
 
-# Monthly Consumption Comparison (Year over Year)
-st.subheader("Comparação do Consumo Mensal (Ano a Ano)")
-yearly_consumption_df = beer_df.copy()
-yearly_consumption_df['year'] = yearly_consumption_df['date'].dt.year
-yearly_consumption_df['month_num'] = yearly_consumption_df['date'].dt.month
-monthly_data = yearly_consumption_df.groupby(['year', 'month_num'])['consumption'].sum().unstack(level=0)
+    # 4. Daily Consumption + Rolling Average
+    st.subheader("Consumo Diário e Média Móvel (7 dias)")
+    daily_df = beer_df.copy().sort_values('date')
+    daily_df['Média Móvel'] = daily_df['consumption'].rolling(window=7).mean()
+    daily_df = daily_df.rename(columns={'consumption': 'Consumo Real'})
+    
+    # Passando múltiplas colunas para o line_chart
+    st.line_chart(daily_df.set_index('date')[['Consumo Real', 'Média Móvel']], color=["#3282b8", "#be3144"])
 
-fig_monthly_comp, ax_monthly_comp = plt.subplots(figsize=(12, 6))
-monthly_data.plot(kind='line', marker='o', ax=ax_monthly_comp)
-month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-ax_monthly_comp.set_xticks(range(1, 13))
-ax_monthly_comp.set_xticklabels(month_names)
-ax_monthly_comp.set_title('Comparação do Consumo Mensal (Ano a Ano)')
-ax_monthly_comp.set_ylabel('Consumo Total')
-ax_monthly_comp.set_xlabel('Mês')
-ax_monthly_comp.legend(title='Ano')
-ax_monthly_comp.grid(axis='y', linestyle='--', alpha=0.7)
-plt.tight_layout()
-st.pyplot(fig_monthly_comp)
+    # 5. Trend Analysis (EWMA)
+    st.subheader("Tendência de Longo Prazo (Filtro Passa-Baixa)")
+    trend_df = beer_df.copy().sort_values('date')
+    trend_df['Tendência (EWMA)'] = trend_df['consumption'].ewm(span=30, adjust=False).mean()
+    trend_df = trend_df.rename(columns={'consumption': 'Consumo Bruto'})
 
-# Daily Consumption Over Time (with Rolling Average)
-st.subheader("Consumo Diário ao Longo do Tempo")
-daily_consumption_df = beer_df.copy()
-daily_consumption_df = daily_consumption_df.sort_values('date')
-daily_consumption_df['rolling_avg'] = daily_consumption_df['consumption'].rolling(window=7).mean()
+    st.area_chart(trend_df.set_index('date')[['Consumo Bruto', 'Tendência (EWMA)']], color=["#dddddd", "#004a7c"])
 
-fig_daily, ax_daily = plt.subplots(figsize=(15, 7))
-ax_daily.plot(daily_consumption_df['date'], daily_consumption_df['consumption'], label='Consumo Diário',
-              color='steelblue', alpha=0.3, linewidth=1)
-ax_daily.plot(daily_consumption_df['date'], daily_consumption_df['rolling_avg'], label='Média Móvel de 7 Dias',
-              color='darkred', linewidth=2)
-ax_daily.set_title('Consumo Diário ao Longo do Tempo (2015)', fontsize=16)
-ax_daily.set_xlabel('Data', fontsize=12)
-ax_daily.set_ylabel('Consumo', fontsize=12)
-ax_daily.grid(True, linestyle='--', alpha=0.5)
-ax_daily.legend()
-fig_daily.autofmt_xdate()
-plt.tight_layout()
-st.pyplot(fig_daily)
-
-# Low-Pass Filtered Consumption Trend
-st.subheader("Tendência de Consumo (Filtro Passa-Baixa)")
-softened_daily_consumption = beer_df.copy()
-softened_daily_consumption = softened_daily_consumption.sort_values('date')
-softened_daily_consumption['soft_trend'] = softened_daily_consumption['consumption'].ewm(span=30, adjust=False).mean()
-
-fig_lp, ax_lp = plt.subplots(figsize=(15, 7))
-ax_lp.plot(softened_daily_consumption['date'], softened_daily_consumption['consumption'], color='gray', alpha=0.2, label='Dados Diários Brutos')
-ax_lp.plot(softened_daily_consumption['date'], softened_daily_consumption['soft_trend'], color='royalblue', linewidth=3, label='Tendência Passa-Baixa (EWMA)')
-ax_lp.set_title('Análise de Tendência de Consumo (Filtro Passa-Baixa)', fontsize=16)
-ax_lp.set_xlabel('Data')
-ax_lp.set_ylabel('Consumo')
-ax_lp.legend()
-ax_lp.grid(True, alpha=0.3)
-fig_lp.autofmt_xdate()
-plt.tight_layout()
-st.pyplot(fig_lp)
+else:
+    st.warning("Aguardando carregamento de dados...")
