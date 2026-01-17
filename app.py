@@ -1,7 +1,6 @@
 
 import streamlit as st
 import pandas as pd
-import kagglehub
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os # For managing file paths
@@ -9,15 +8,8 @@ import os # For managing file paths
 # --- Data Loading and Preprocessing (as in the notebook) ---
 @st.cache_data # Cache the data loading to improve performance
 def load_and_preprocess_data():
-    # Download dataset using kagglehub (it caches it locally)
-    # Ensure the dataset name matches the one used in the notebook
-    dataset_name = 'dongeorge/beer-consumption-sao-paulo'
-    dataset_path_dir = kagglehub.dataset_download(dataset_name)
-
     # Construct the full path to the CSV file
-    csv_file_path = os.path.join(dataset_path_dir, 'Consumo_cerveja.csv')
-
-    beer_df = pd.read_csv(csv_file_path, sep=',')
+    beer_df = pd.read_csv("./Consumo_cerveja.csv")
 
     # Drop rows with any missing values
     beer_df = beer_df.dropna()
